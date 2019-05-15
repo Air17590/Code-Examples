@@ -1,0 +1,107 @@
+package com.mentalstack.justdoit.screens.main
+
+import android.arch.lifecycle.LifecycleOwner
+import android.arch.lifecycle.LiveData
+import android.arch.lifecycle.Observer
+import android.arch.lifecycle.ViewModel
+import android.arch.persistence.db.SimpleSQLiteQuery
+import android.content.Context
+import com.mentalstack.justdoit.App
+import com.mentalstack.justdoit.database.query.QueryGenerator
+import com.mentalstack.justdoit.extensions.strHeaderDate
+import com.mentalstack.justdoit.model.Filter
+import com.mentalstack.justdoit.model.HeaderTask
+import com.mentalstack.justdoit.model.Task
+import com.mentalstack.justdoit.utils.tasksmanager.TasksManager
+import org.jetbrains.anko.doAsync
+import org.jetbrains.anko.uiThread
+import java.util.*
+
+class MainViewModel : ViewModel() {
+    private val query
+        get() = getFilterQuery()
+    private var filter = Filter()
+    private var liveDataTasks: LiveData<List<Task>>? = null
+
+    fun getTaskById(id: Long) = App.database.taskDao().getTaskById(id)
+
+    fun startUpdateObserve(ctx: Context, onDone: ((newList: MutableList<HeaderTask>) -> Unit)? = null) {
+        val db = App.database
+        liveDataTasks?.removeObservers(ctx as LifecycleOwner)
+        liveDataTasks = db.taskDao().getTasksRawQuery(query)
+        liveDataTasks?.observe(ctx as LifecycleOwner, Observer { list ->
+            doAsync {
+                val listDates = db.taskDao().getTaskDatesList()
+                val headersDateArray = listDates.map { it.strHeaderDate() }.distinct()
+                val formattedArray = ArrayList<HeaderTask>()
+                if (headersDateArray.isNotEmpty()) {
+                    headersDateArray.forEach { header ->
+                        val listByDate =
+                            list?.filter { it.date.strHeaderDate() == header }
+                        if (listByDate != null && listByDate.isNotEmpty())
+                            formattedArray.add(HeaderTask(header, listByDate))
+                    }
+                }
+                uiThread {
+                    onDone?.invoke(formattedArray)
+                }
+            }
+        })
+    }
+
+    private fun getFilterQuery(): SimpleSQLiteQuery {
+        val queryParams = QueryGenerator.getFilterQuery(filter)
+        return SimpleSQLiteQuery(queryParams, arrayOf())
+    }
+
+    fun updateTaskDoneState(task: Task) {
+        task.isDone = !task.isDone
+        doAsync {
+            App.database.taskDao().updateTask(task)
+            if (task.isDone) {
+                TasksManager.instance.stopTask(task.id)
+                Task.getTaskForRepeat(task)?.let {
+                    it.id = App.database.taskDao().addTask(it)
+                    TasksManager.instance.scheduleTask(it)
+                    task.repeat.nextTaskId = it.id
+                    App.database.taskDao().updateTask(task)
+                }
+            } else {
+                TasksManager.instance.scheduleTask(task)
+            }
+        }
+    }
+
+    fun deleteTask(taskId: Long) {
+        doAsync {
+            App.database.taskDao().deleteTaskById(taskId)
+            TasksManager.instance.stopTask(taskId)
+        }
+    }
+
+    fun getMinMaxDateBorders(onDone: (() -> Unit)?) {
+        doAsync {
+            val listDates = App.database.taskDao().getTaskDatesList()
+            filter.minDate = listDates.getOrNull(0)
+            filter.maxDate = listDates.getOrNull(listDates.lastIndex)
+            uiThread { onDone?.invoke() }
+        }
+    }
+
+    fun getFilter() = filter
+    fun setFilter(filter: Filter) {
+        this.filter = filter
+    }
+
+    fun isActiveFilter() = filter.isActive()
+
+    fun isNotEmptyDB(isEnable: (Boolean) -> Unit) {
+        doAsync {
+            val count = App.database.taskDao().getTasksCount()
+            uiThread {
+                isEnable(count > 0)
+            }
+        }
+    }
+
+}
