@@ -1,0 +1,58 @@
+abstract class Beverage {
+    open var description = "Unknown Beverage"
+    abstract fun cost(): Double
+}
+
+abstract class CondimentDecorator() : Beverage() {
+    abstract override var description: String
+}
+
+
+class Espresso : Beverage() {
+    override var description = "Espresso"
+    override fun cost(): Double {
+        return 0.90
+    }
+}
+
+class HouseBlend : Beverage() {
+    override var description = "HouseBlend"
+    override fun cost(): Double {
+        return 0.94
+    }
+}
+
+
+class Mocha(val beverage: Beverage):CondimentDecorator(){
+    override var description: String = beverage.description + ", Mocha"
+    override fun cost(): Double {
+        return .20 + beverage.cost()
+    }
+}
+
+class Soy(val beverage: Beverage):CondimentDecorator(){
+    override var description: String = beverage.description + ", Soy"
+    override fun cost(): Double {
+        return .28 + beverage.cost()
+    }
+}
+
+class Whip(val beverage: Beverage):CondimentDecorator(){
+    override var description: String = beverage.description + ", Whip"
+    override fun cost(): Double {
+        return .40 + beverage.cost()
+    }
+}
+
+fun main(){
+    val base = Espresso()
+    val base2 = HouseBlend()
+    val bev = Mocha(base)
+    val bev2 = Soy(bev)
+    val bev3 = Whip(bev2)
+    val bev4 = Whip(Whip(Whip(base2)))
+    print(bev.description +" " + bev.cost().toString() + "\n")
+    print(bev2.description +" " + bev2.cost().toString() + "\n")
+    print(bev3.description +" " + bev3.cost().toString() + "\n")
+    print(bev4.description +" " + bev4.cost().toString() + "\n")
+}
